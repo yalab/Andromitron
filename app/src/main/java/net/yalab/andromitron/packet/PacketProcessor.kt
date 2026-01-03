@@ -10,6 +10,11 @@ class PacketProcessor(private val connectionLogger: ConnectionLogger? = null) {
     
     private val filterManager = FilterManager.getInstance()
     
+    // Simple cache for recent domain filtering results
+    private val domainFilterCache = mutableMapOf<String, FilterAction>()
+    private var cacheSize = 0
+    private val maxCacheSize = 1000
+    
     companion object {
         private const val TAG = "PacketProcessor"
         
@@ -29,11 +34,7 @@ class PacketProcessor(private val connectionLogger: ConnectionLogger? = null) {
             return PacketAction.ALLOW
         }
         
-        Log.v(TAG, "Processing ${packet.getProtocol()} packet: " +
-                "${packet.getSourceIp()}:${packet.getSourcePort()} -> " +
-                "${packet.getDestinationIp()}:${packet.getDestinationPort()}")
-        
-        // Log packet details for debugging
+        // Log packet details for debugging only when logger is present
         connectionLogger?.logPacketDetails(
             sourceIp = packet.getSourceIp(),
             destinationIp = packet.getDestinationIp(),
@@ -44,7 +45,6 @@ class PacketProcessor(private val connectionLogger: ConnectionLogger? = null) {
         )
         
         return when {
-            isDnsPacket(packet) -> processDnsPacket(packet)
             isHttpPacket(packet) -> processHttpPacket(packet)
             isHttpsPacket(packet) -> processHttpsPacket(packet)
             else -> processGenericPacket(packet)
@@ -57,13 +57,17 @@ class PacketProcessor(private val connectionLogger: ConnectionLogger? = null) {
     }
     
     private fun isHttpPacket(packet: IpPacket): Boolean {
-        return packet.isTcp() && 
-               (packet.getDestinationPort() == HTTP_PORT || packet.getSourcePort() == HTTP_PORT)
+        if (!packet.isTcp()) return false
+        val destPort = packet.getDestinationPort()
+        val srcPort = packet.getSourcePort()
+        return destPort == HTTP_PORT || srcPort == HTTP_PORT
     }
     
     private fun isHttpsPacket(packet: IpPacket): Boolean {
-        return packet.isTcp() && 
-               (packet.getDestinationPort() == HTTPS_PORT || packet.getSourcePort() == HTTPS_PORT)
+        if (!packet.isTcp()) return false
+        val destPort = packet.getDestinationPort()
+        val srcPort = packet.getSourcePort()
+        return destPort == HTTPS_PORT || srcPort == HTTPS_PORT
     }
     
     private suspend fun processDnsPacket(packet: IpPacket): PacketAction {
@@ -104,81 +108,70 @@ class PacketProcessor(private val connectionLogger: ConnectionLogger? = null) {
     }
     
     private suspend fun processHttpPacket(packet: IpPacket): PacketAction {
-        Log.d(TAG, "Processing HTTP packet")
+        val domain = extractDomainFromHttpPacket(packet) ?: return PacketAction.ALLOW
         
-        val domain = extractDomainFromHttpPacket(packet)
-        if (domain != null) {
-            Log.d(TAG, "HTTP request to domain: $domain")
-            
-            val action = filterManager.filterDomain(domain)
-            return when (action) {
-                FilterAction.BLOCK -> {
-                    Log.i(TAG, "Blocking HTTP request to: $domain")
-                    connectionLogger?.logDomainBlocked(domain, packet.getDestinationIp(), "HTTP", packet.getDestinationPort())
-                    PacketAction.BLOCK
-                }
-                FilterAction.ALLOW -> {
-                    Log.v(TAG, "Allowing HTTP request to: $domain")
-                    connectionLogger?.logDomainAllowed(domain, packet.getDestinationIp(), "HTTP", packet.getDestinationPort())
-                    PacketAction.ALLOW
-                }
-                FilterAction.PROXY -> {
-                    Log.d(TAG, "Proxying HTTP request to: $domain")
-                    connectionLogger?.logProxiedConnection(
-                        packet.getSourceIp(),
-                        packet.getDestinationIp(),
-                        "HTTP",
-                        packet.getSourcePort(),
-                        packet.getDestinationPort(),
-                        domain
-                    )
-                    PacketAction.PROXY
-                }
-            }
+        val action = getCachedFilterAction(domain) ?: run {
+            val result = filterManager.filterDomain(domain)
+            cacheFilterAction(domain, result)
+            result
         }
         
-        return PacketAction.ALLOW
+        when (action) {
+            FilterAction.BLOCK -> {
+                connectionLogger?.logDomainBlocked(domain, packet.getDestinationIp(), "HTTP", packet.getDestinationPort())
+                return PacketAction.BLOCK
+            }
+            FilterAction.ALLOW -> {
+                connectionLogger?.logDomainAllowed(domain, packet.getDestinationIp(), "HTTP", packet.getDestinationPort())
+                return PacketAction.ALLOW
+            }
+            FilterAction.PROXY -> {
+                connectionLogger?.logProxiedConnection(
+                    packet.getSourceIp(),
+                    packet.getDestinationIp(),
+                    "HTTP",
+                    packet.getSourcePort(),
+                    packet.getDestinationPort(),
+                    domain
+                )
+                return PacketAction.PROXY
+            }
+        }
     }
     
     private suspend fun processHttpsPacket(packet: IpPacket): PacketAction {
-        Log.d(TAG, "Processing HTTPS packet")
+        val domain = extractDomainFromTlsSni(packet) ?: return PacketAction.ALLOW
         
-        val domain = extractDomainFromTlsSni(packet)
-        if (domain != null) {
-            Log.d(TAG, "HTTPS/TLS request to domain: $domain")
-            
-            val action = filterManager.filterDomain(domain)
-            return when (action) {
-                FilterAction.BLOCK -> {
-                    Log.i(TAG, "Blocking HTTPS request to: $domain")
-                    connectionLogger?.logDomainBlocked(domain, packet.getDestinationIp(), "HTTPS", packet.getDestinationPort())
-                    PacketAction.BLOCK
-                }
-                FilterAction.ALLOW -> {
-                    Log.v(TAG, "Allowing HTTPS request to: $domain")
-                    connectionLogger?.logDomainAllowed(domain, packet.getDestinationIp(), "HTTPS", packet.getDestinationPort())
-                    PacketAction.ALLOW
-                }
-                FilterAction.PROXY -> {
-                    Log.d(TAG, "Proxying HTTPS request to: $domain")
-                    connectionLogger?.logProxiedConnection(
-                        packet.getSourceIp(),
-                        packet.getDestinationIp(),
-                        "HTTPS",
-                        packet.getSourcePort(),
-                        packet.getDestinationPort(),
-                        domain
-                    )
-                    PacketAction.PROXY
-                }
-            }
+        val action = getCachedFilterAction(domain) ?: run {
+            val result = filterManager.filterDomain(domain)
+            cacheFilterAction(domain, result)
+            result
         }
         
-        return PacketAction.ALLOW
+        when (action) {
+            FilterAction.BLOCK -> {
+                connectionLogger?.logDomainBlocked(domain, packet.getDestinationIp(), "HTTPS", packet.getDestinationPort())
+                return PacketAction.BLOCK
+            }
+            FilterAction.ALLOW -> {
+                connectionLogger?.logDomainAllowed(domain, packet.getDestinationIp(), "HTTPS", packet.getDestinationPort())
+                return PacketAction.ALLOW
+            }
+            FilterAction.PROXY -> {
+                connectionLogger?.logProxiedConnection(
+                    packet.getSourceIp(),
+                    packet.getDestinationIp(),
+                    "HTTPS",
+                    packet.getSourcePort(),
+                    packet.getDestinationPort(),
+                    domain
+                )
+                return PacketAction.PROXY
+            }
+        }
     }
     
     private fun processGenericPacket(packet: IpPacket): PacketAction {
-        Log.v(TAG, "Processing generic ${packet.getProtocol()} packet")
         return PacketAction.ALLOW
     }
     
@@ -225,15 +218,26 @@ class PacketProcessor(private val connectionLogger: ConnectionLogger? = null) {
     private fun extractDomainFromHttpPacket(packet: IpPacket): String? {
         return try {
             val payload = packet.payload
-            val payloadString = String(payload)
+            if (payload.size < 20) return null // Skip very small packets
             
-            // Look for Host header
-            val hostHeaderRegex = Regex("Host:\\s*([^\\r\\n]+)", RegexOption.IGNORE_CASE)
-            val match = hostHeaderRegex.find(payloadString)
+            val payloadString = String(payload, Charsets.UTF_8)
             
-            match?.groups?.get(1)?.value?.trim()
+            // Quick check if it's likely HTTP
+            if (!payloadString.startsWith("GET ") && !payloadString.startsWith("POST ") && 
+                !payloadString.startsWith("PUT ") && !payloadString.startsWith("HEAD ")) {
+                return null
+            }
+            
+            // Look for Host header more efficiently
+            val hostIndex = payloadString.indexOf("Host:", ignoreCase = true)
+            if (hostIndex == -1) return null
+            
+            val lineStart = hostIndex + 5
+            val lineEnd = payloadString.indexOf('\n', lineStart)
+            if (lineEnd == -1) return null
+            
+            payloadString.substring(lineStart, lineEnd).trim().replace("\r", "")
         } catch (e: Exception) {
-            Log.w(TAG, "Error extracting domain from HTTP packet", e)
             null
         }
     }
@@ -245,42 +249,39 @@ class PacketProcessor(private val connectionLogger: ConnectionLogger? = null) {
             
             val buffer = ByteBuffer.wrap(payload)
             
-            // Check if this is a TLS handshake
-            val contentType = buffer.get().toInt() and 0xFF
-            if (contentType != 0x16) return null // Not a handshake
+            // Quick check for TLS handshake and ClientHello
+            if (buffer.get().toInt() and 0xFF != 0x16) return null // Not a handshake
+            buffer.position(5) // Skip version and length
+            if (buffer.get().toInt() and 0xFF != 0x01) return null // Not ClientHello
             
-            // Skip version (2 bytes) and length (2 bytes)
-            buffer.position(5)
-            
-            // Check handshake type
-            val handshakeType = buffer.get().toInt() and 0xFF
-            if (handshakeType != 0x01) return null // Not ClientHello
-            
-            // Skip handshake length (3 bytes), version (2 bytes), random (32 bytes)
-            buffer.position(buffer.position() + 37)
+            // Jump to extensions more efficiently
+            buffer.position(buffer.position() + 37) // Skip handshake length, version, random
             
             // Skip session ID
             if (!buffer.hasRemaining()) return null
             val sessionIdLength = buffer.get().toInt() and 0xFF
+            if (buffer.remaining() < sessionIdLength) return null
             buffer.position(buffer.position() + sessionIdLength)
             
             // Skip cipher suites
             if (buffer.remaining() < 2) return null
             val cipherSuitesLength = buffer.short.toInt() and 0xFFFF
+            if (buffer.remaining() < cipherSuitesLength) return null
             buffer.position(buffer.position() + cipherSuitesLength)
             
             // Skip compression methods
             if (!buffer.hasRemaining()) return null
             val compressionMethodsLength = buffer.get().toInt() and 0xFF
+            if (buffer.remaining() < compressionMethodsLength) return null
             buffer.position(buffer.position() + compressionMethodsLength)
             
             // Parse extensions
             if (buffer.remaining() < 2) return null
             val extensionsLength = buffer.short.toInt() and 0xFFFF
+            if (buffer.remaining() < extensionsLength) return null
             
             return parseServerNameExtension(buffer, extensionsLength)
         } catch (e: Exception) {
-            Log.w(TAG, "Error extracting SNI from TLS packet", e)
             null
         }
     }
@@ -315,6 +316,27 @@ class PacketProcessor(private val connectionLogger: ConnectionLogger? = null) {
         }
         
         return null
+    }
+    
+    private fun getCachedFilterAction(domain: String): FilterAction? {
+        return domainFilterCache[domain]
+    }
+    
+    private fun cacheFilterAction(domain: String, action: FilterAction) {
+        if (cacheSize >= maxCacheSize) {
+            // Simple cache eviction - clear half the cache
+            val keysToRemove = domainFilterCache.keys.take(maxCacheSize / 2)
+            keysToRemove.forEach { domainFilterCache.remove(it) }
+            cacheSize = domainFilterCache.size
+        }
+        
+        domainFilterCache[domain] = action
+        cacheSize++
+    }
+    
+    fun clearCache() {
+        domainFilterCache.clear()
+        cacheSize = 0
     }
     
     fun getFilterStats() = filterManager.getStats()
