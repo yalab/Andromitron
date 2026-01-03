@@ -12,7 +12,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
 @Composable
-fun ConnectionStatusCard() {
+fun ConnectionStatusCard(
+    onVpnToggle: (Boolean, (Boolean) -> Unit) -> Unit = { _, _ -> }
+) {
     var isVpnActive by remember { mutableStateOf(false) }
     
     Card(
@@ -51,7 +53,11 @@ fun ConnectionStatusCard() {
                 }
                 
                 FilledTonalButton(
-                    onClick = { isVpnActive = !isVpnActive },
+                    onClick = { 
+                        onVpnToggle(!isVpnActive) { success ->
+                            isVpnActive = success
+                        }
+                    },
                     colors = ButtonDefaults.filledTonalButtonColors(
                         containerColor = if (isVpnActive) {
                             MaterialTheme.colorScheme.errorContainer

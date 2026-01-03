@@ -21,7 +21,9 @@ import net.yalab.andromitron.ui.components.StatisticsCard
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AndromitronApp() {
+fun AndromitronApp(
+    onVpnToggle: (Boolean, (Boolean) -> Unit) -> Unit = { _, _ -> }
+) {
     var selectedTabIndex by remember { mutableIntStateOf(0) }
     val tabs = listOf("Home", "Rules", "Logs", "Settings")
     
@@ -65,7 +67,7 @@ fun AndromitronApp() {
         }
     ) { innerPadding ->
         when (selectedTabIndex) {
-            0 -> HomeScreen(Modifier.padding(innerPadding))
+            0 -> HomeScreen(Modifier.padding(innerPadding), onVpnToggle)
             1 -> FilterRulesScreen(Modifier.padding(innerPadding))
             2 -> ConnectionLogsScreen(Modifier.padding(innerPadding))
             3 -> SettingsScreen(Modifier.padding(innerPadding))
@@ -74,7 +76,10 @@ fun AndromitronApp() {
 }
 
 @Composable
-private fun HomeScreen(modifier: Modifier = Modifier) {
+private fun HomeScreen(
+    modifier: Modifier = Modifier,
+    onVpnToggle: (Boolean, (Boolean) -> Unit) -> Unit = { _, _ -> }
+) {
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
@@ -91,7 +96,7 @@ private fun HomeScreen(modifier: Modifier = Modifier) {
         }
         
         item {
-            ConnectionStatusCard()
+            ConnectionStatusCard(onVpnToggle = onVpnToggle)
         }
         
         item {
