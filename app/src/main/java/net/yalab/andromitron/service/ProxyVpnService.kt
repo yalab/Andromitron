@@ -19,12 +19,15 @@ import kotlinx.coroutines.launch
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.nio.ByteBuffer
+import net.yalab.andromitron.packet.PacketProcessor
+import net.yalab.andromitron.packet.PacketAction
 
 class ProxyVpnService : VpnService() {
     
     private var vpnInterface: ParcelFileDescriptor? = null
     private var serviceJob: Job? = null
     private val serviceScope = CoroutineScope(Dispatchers.IO + Job())
+    private val packetProcessor = PacketProcessor()
     
     companion object {
         private const val TAG = "ProxyVpnService"
@@ -137,8 +140,26 @@ class ProxyVpnService : VpnService() {
         }
     }
     
-    private fun processPacket(packet: ByteBuffer) {
+    private suspend fun processPacket(packet: ByteBuffer) {
         Log.v(TAG, "Processing packet: ${packet.remaining()} bytes")
+        
+        val action = packetProcessor.processPacket(packet)
+        
+        when (action) {
+            PacketAction.ALLOW -> {
+                // Forward packet normally
+                Log.v(TAG, "Packet allowed")
+            }
+            PacketAction.BLOCK -> {
+                // Drop the packet
+                Log.d(TAG, "Packet blocked")
+                return
+            }
+            PacketAction.PROXY -> {
+                // Handle through proxy
+                Log.d(TAG, "Packet routed through proxy")
+            }
+        }
     }
     
     private fun stopVpnService() {
