@@ -5,7 +5,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.*
@@ -49,7 +49,7 @@ fun AndromitronApp() {
                                 imageVector = when (index) {
                                     0 -> Icons.Default.Home
                                     1 -> Icons.Default.Info
-                                    2 -> Icons.Default.List
+                                    2 -> Icons.AutoMirrored.Filled.List
                                     3 -> Icons.Default.Settings
                                     else -> Icons.Default.Home
                                 },
@@ -176,7 +176,7 @@ private fun ConnectionLogsScreen(modifier: Modifier = Modifier) {
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Icon(
-                    imageVector = Icons.Default.List,
+                    imageVector = Icons.AutoMirrored.Filled.List,
                     contentDescription = null,
                     modifier = Modifier.size(48.dp)
                 )

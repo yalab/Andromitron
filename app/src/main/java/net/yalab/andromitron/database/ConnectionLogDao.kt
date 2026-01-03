@@ -25,6 +25,9 @@ interface ConnectionLogDao {
     suspend fun getLogsByTimeRange(startTime: Long, endTime: Long): List<ConnectionLogEntity>
     
     @Insert
+    suspend fun insertConnectionLog(log: ConnectionLogEntity): Long
+    
+    @Insert
     suspend fun insertLog(log: ConnectionLogEntity): Long
     
     @Insert
@@ -35,6 +38,9 @@ interface ConnectionLogDao {
     
     @Query("DELETE FROM connection_logs")
     suspend fun deleteAllLogs()
+    
+    @Query("DELETE FROM connection_logs WHERE id IN (SELECT id FROM connection_logs ORDER BY timestamp ASC LIMIT :count)")
+    suspend fun deleteOldestLogs(count: Int)
     
     @Query("SELECT COUNT(*) FROM connection_logs")
     suspend fun getLogCount(): Int
@@ -53,6 +59,17 @@ interface ConnectionLogDao {
     
     @Query("SELECT action, COUNT(*) as count FROM connection_logs WHERE timestamp >= :startTime GROUP BY action ORDER BY count DESC")
     suspend fun getActionStatistics(startTime: Long): List<ActionCountResult>
+    
+    @Query("""
+        SELECT 
+            (SELECT COUNT(*) FROM connection_logs WHERE timestamp >= :startTime) as totalConnections,
+            (SELECT COUNT(*) FROM connection_logs WHERE action = 'BLOCK' AND timestamp >= :startTime) as blockedCount,
+            (SELECT COUNT(*) FROM connection_logs WHERE action = 'ALLOW' AND timestamp >= :startTime) as allowedCount,
+            (SELECT COUNT(*) FROM connection_logs WHERE action = 'PROXY' AND timestamp >= :startTime) as proxiedCount,
+            (SELECT COALESCE(SUM(bytes_sent), 0) FROM connection_logs WHERE timestamp >= :startTime) as totalBytesSent,
+            (SELECT COALESCE(SUM(bytes_received), 0) FROM connection_logs WHERE timestamp >= :startTime) as totalBytesReceived
+    """)
+    suspend fun getStatsSince(startTime: Long): ConnectionStats
 }
 
 data class DomainCountResult(
@@ -63,4 +80,13 @@ data class DomainCountResult(
 data class ActionCountResult(
     val action: String,
     val count: Int
+)
+
+data class ConnectionStats(
+    val totalConnections: Int,
+    val blockedCount: Int,
+    val allowedCount: Int,
+    val proxiedCount: Int,
+    val totalBytesSent: Long,
+    val totalBytesReceived: Long
 )

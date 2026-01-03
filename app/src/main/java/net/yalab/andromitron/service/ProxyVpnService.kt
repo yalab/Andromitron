@@ -7,7 +7,6 @@ import android.app.PendingIntent
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.net.VpnService
-import android.os.Build
 import android.os.ParcelFileDescriptor
 import android.util.Log
 import androidx.core.app.NotificationCompat
@@ -21,13 +20,15 @@ import java.io.FileOutputStream
 import java.nio.ByteBuffer
 import net.yalab.andromitron.packet.PacketProcessor
 import net.yalab.andromitron.packet.PacketAction
+import net.yalab.andromitron.logging.ConnectionLogger
 
 class ProxyVpnService : VpnService() {
     
     private var vpnInterface: ParcelFileDescriptor? = null
     private var serviceJob: Job? = null
     private val serviceScope = CoroutineScope(Dispatchers.IO + Job())
-    private val packetProcessor = PacketProcessor()
+    private lateinit var connectionLogger: ConnectionLogger
+    private lateinit var packetProcessor: PacketProcessor
     
     companion object {
         private const val TAG = "ProxyVpnService"
@@ -65,18 +66,19 @@ class ProxyVpnService : VpnService() {
         }
         
         try {
+            // Initialize connection logger and packet processor
+            connectionLogger = ConnectionLogger.getInstance(this)
+            packetProcessor = PacketProcessor(connectionLogger)
+            connectionLogger.logVpnSessionStart()
+            
             createNotificationChannel()
             val notification = createNotification()
             
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                startForeground(
-                    NOTIFICATION_ID, 
-                    notification,
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_SYSTEM_EXEMPTED
-                )
-            } else {
-                startForeground(NOTIFICATION_ID, notification)
-            }
+            startForeground(
+                NOTIFICATION_ID, 
+                notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+            )
             
             establish()
             
@@ -85,6 +87,7 @@ class ProxyVpnService : VpnService() {
             }
             
             Log.i(TAG, "VPN service started successfully")
+            connectionLogger.logStatistics()
         } catch (e: Exception) {
             Log.e(TAG, "Failed to start VPN service", e)
             stopVpnService()
@@ -165,6 +168,11 @@ class ProxyVpnService : VpnService() {
     private fun stopVpnService() {
         Log.i(TAG, "Stopping VPN service")
         
+        if (::connectionLogger.isInitialized) {
+            connectionLogger.logVpnSessionStop()
+            connectionLogger.logStatistics()
+        }
+        
         serviceJob?.cancel()
         serviceJob = null
         
@@ -176,19 +184,17 @@ class ProxyVpnService : VpnService() {
     }
     
     private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                NOTIFICATION_CHANNEL_ID,
-                "VPN Proxy Service",
-                NotificationManager.IMPORTANCE_LOW
-            ).apply {
-                description = "Notification for VPN proxy service"
-                setShowBadge(false)
-            }
-            
-            val notificationManager = getSystemService(NotificationManager::class.java)
-            notificationManager.createNotificationChannel(channel)
+        val channel = NotificationChannel(
+            NOTIFICATION_CHANNEL_ID,
+            "VPN Proxy Service",
+            NotificationManager.IMPORTANCE_LOW
+        ).apply {
+            description = "Notification for VPN proxy service"
+            setShowBadge(false)
         }
+        
+        val notificationManager = getSystemService(NotificationManager::class.java)
+        notificationManager.createNotificationChannel(channel)
     }
     
     private fun createNotification(): Notification {

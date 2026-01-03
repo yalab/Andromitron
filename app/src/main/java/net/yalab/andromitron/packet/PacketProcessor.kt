@@ -3,9 +3,10 @@ package net.yalab.andromitron.packet
 import android.util.Log
 import net.yalab.andromitron.filter.FilterAction
 import net.yalab.andromitron.filter.FilterManager
+import net.yalab.andromitron.logging.ConnectionLogger
 import java.nio.ByteBuffer
 
-class PacketProcessor {
+class PacketProcessor(private val connectionLogger: ConnectionLogger? = null) {
     
     private val filterManager = FilterManager.getInstance()
     
@@ -31,6 +32,16 @@ class PacketProcessor {
         Log.v(TAG, "Processing ${packet.getProtocol()} packet: " +
                 "${packet.getSourceIp()}:${packet.getSourcePort()} -> " +
                 "${packet.getDestinationIp()}:${packet.getDestinationPort()}")
+        
+        // Log packet details for debugging
+        connectionLogger?.logPacketDetails(
+            sourceIp = packet.getSourceIp(),
+            destinationIp = packet.getDestinationIp(),
+            protocol = packet.getProtocol(),
+            sourcePort = packet.getSourcePort(),
+            destinationPort = packet.getDestinationPort(),
+            payloadSize = packet.payload.size
+        )
         
         return when {
             isDnsPacket(packet) -> processDnsPacket(packet)
@@ -66,14 +77,24 @@ class PacketProcessor {
             return when (action) {
                 FilterAction.BLOCK -> {
                     Log.i(TAG, "Blocking DNS query for: $domain")
+                    connectionLogger?.logDomainBlocked(domain, packet.getDestinationIp(), "DNS", packet.getDestinationPort())
                     PacketAction.BLOCK
                 }
                 FilterAction.ALLOW -> {
                     Log.v(TAG, "Allowing DNS query for: $domain")
+                    connectionLogger?.logDomainAllowed(domain, packet.getDestinationIp(), "DNS", packet.getDestinationPort())
                     PacketAction.ALLOW
                 }
                 FilterAction.PROXY -> {
                     Log.d(TAG, "Proxying DNS query for: $domain")
+                    connectionLogger?.logProxiedConnection(
+                        packet.getSourceIp(),
+                        packet.getDestinationIp(),
+                        "DNS",
+                        packet.getSourcePort(),
+                        packet.getDestinationPort(),
+                        domain
+                    )
                     PacketAction.PROXY
                 }
             }
@@ -93,14 +114,24 @@ class PacketProcessor {
             return when (action) {
                 FilterAction.BLOCK -> {
                     Log.i(TAG, "Blocking HTTP request to: $domain")
+                    connectionLogger?.logDomainBlocked(domain, packet.getDestinationIp(), "HTTP", packet.getDestinationPort())
                     PacketAction.BLOCK
                 }
                 FilterAction.ALLOW -> {
                     Log.v(TAG, "Allowing HTTP request to: $domain")
+                    connectionLogger?.logDomainAllowed(domain, packet.getDestinationIp(), "HTTP", packet.getDestinationPort())
                     PacketAction.ALLOW
                 }
                 FilterAction.PROXY -> {
                     Log.d(TAG, "Proxying HTTP request to: $domain")
+                    connectionLogger?.logProxiedConnection(
+                        packet.getSourceIp(),
+                        packet.getDestinationIp(),
+                        "HTTP",
+                        packet.getSourcePort(),
+                        packet.getDestinationPort(),
+                        domain
+                    )
                     PacketAction.PROXY
                 }
             }
@@ -120,14 +151,24 @@ class PacketProcessor {
             return when (action) {
                 FilterAction.BLOCK -> {
                     Log.i(TAG, "Blocking HTTPS request to: $domain")
+                    connectionLogger?.logDomainBlocked(domain, packet.getDestinationIp(), "HTTPS", packet.getDestinationPort())
                     PacketAction.BLOCK
                 }
                 FilterAction.ALLOW -> {
                     Log.v(TAG, "Allowing HTTPS request to: $domain")
+                    connectionLogger?.logDomainAllowed(domain, packet.getDestinationIp(), "HTTPS", packet.getDestinationPort())
                     PacketAction.ALLOW
                 }
                 FilterAction.PROXY -> {
                     Log.d(TAG, "Proxying HTTPS request to: $domain")
+                    connectionLogger?.logProxiedConnection(
+                        packet.getSourceIp(),
+                        packet.getDestinationIp(),
+                        "HTTPS",
+                        packet.getSourcePort(),
+                        packet.getDestinationPort(),
+                        domain
+                    )
                     PacketAction.PROXY
                 }
             }

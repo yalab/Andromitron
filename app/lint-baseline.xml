@@ -210,37 +210,4 @@
             column="85"/>
     </issue>
 
-    <issue
-        id="ObsoleteSdkInt"
-        message="Unnecessary; `SDK_INT` is always >= 35"
-        errorLine1="            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {"
-        errorLine2="                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/net/yalab/andromitron/service/ProxyVpnService.kt"
-            line="71"
-            column="17"/>
-    </issue>
-
-    <issue
-        id="ObsoleteSdkInt"
-        message="Unnecessary; `SDK_INT` is always >= 35"
-        errorLine1="        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {"
-        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/net/yalab/andromitron/service/ProxyVpnService.kt"
-            line="179"
-            column="13"/>
-    </issue>
-
-    <issue
-        id="KaptUsageInsteadOfKsp"
-        message="This library supports using KSP instead of kapt, which greatly improves performance. Learn more: https://developer.android.com/studio/build/migrate-to-ksp"
-        errorLine1="    kapt(libs.androidx.room.compiler)"
-        errorLine2="    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="build.gradle.kts"
-            line="60"
-            column="5"/>
-    </issue>
-
 </issues>

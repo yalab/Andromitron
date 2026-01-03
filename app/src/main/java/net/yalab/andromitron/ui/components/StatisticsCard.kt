@@ -51,7 +51,7 @@ fun StatisticsCard() {
             Spacer(modifier = Modifier.height(12.dp))
             
             LinearProgressIndicator(
-                progress = 0.75f,
+                progress = { 0.75f },
                 modifier = Modifier.fillMaxWidth(),
                 color = MaterialTheme.colorScheme.primary,
                 trackColor = MaterialTheme.colorScheme.surfaceVariant
